@@ -1,0 +1,5 @@
+nn_training/English/
+nn_training/fnt_data.npy
+nn_training/fnt_data_labels.npy
+nn_training/fnt_test_data.npy
+nn_training/fnt_test_labels.npy
