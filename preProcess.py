@@ -1,6 +1,7 @@
 import cv2
 import numpy as np
 
+
 class preProcess:
     def __init__(self, img):
         self.image = img
@@ -9,12 +10,17 @@ class preProcess:
         self.imgCannied = None
         self.imgDrawWithoutBox = None
         self.imgDrawWithBox = None
+        self.rowContours = None
         self.cutImages = None
 
         self.th1 = 128
         self.th2 = 128
         self.areaMin = 0
+        self.rowApprox = 5
+        self.minGap = 10
         self.cutSize = (250, 350)  # (width, height)
+        self.boxApprox = 5
+
         self.__createTrackBar()
         self.__process()
 
@@ -23,62 +29,112 @@ class preProcess:
         self.__imgEdgeDetectCanny()
         self.__findContours()
         self.__selectByArea()
+        self.__cutByRow()
         self.__sort()
+        self.__cutByCol()
         self.__drawContours()
-        self.__cutByContour()
 
     def __toGray(self):
-        self.imgGrayed = cv2.cvtColor(self.image, cv2.COLOR_BGR2GRAY)
+        self.imgGrayed = 255 - cv2.cvtColor(self.image, cv2.COLOR_BGR2GRAY)
 
     def __imgEdgeDetectCanny(self):
         self.imgCannied = cv2.Canny(self.image, self.th1, self.th2)
 
     def __findContours(self):
-        self.contours, _ = cv2.findContours(self.imgCannied, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
+        self.contours, _ = cv2.findContours(self.imgGrayed, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
 
     def __selectByArea(self):
         cnts = []
-        if self.contours is None:
-            pass
-        else:
-            for cnt in self.contours:
-                area = cv2.contourArea(cnt)
-                if area >= self.areaMin:
-                    cnts.append(cnt)
-            self.contours = cnts
+        for cnt in self.contours:
+            area = cv2.contourArea(cnt)
+            if area >= self.areaMin:
+                cnts.append(cnt)
+        self.contours = cnts
 
     def __sort(self):
-        lengths = None
-        cnts = None
-        if self.contours is None:
+        rows = []
+        if self.rowContours is None:
             pass
         else:
-            for i, cnt in enumerate(self.contours):
+            for row in self.rowContours:
+                positions = None
+                cnts = None
+                for cnt in row:
+                    peri = cv2.arcLength(cnt, True)  # True means closed
+                    approx = cv2.approxPolyDP(cnt, 0.02 * peri, True)
+                    x, y, w, h = cv2.boundingRect(approx)
+                    if positions is None:
+                        positions = [x]
+                        cnts = [cnt]
+                    else:
+                        for i, pos in enumerate(positions):
+                            if x < pos:
+                                positions.insert(i, x)
+                                cnts.insert(i, cnt)
+                                break
+                            elif i == len(positions) - 1:
+                                positions.append(x)
+                                cnts.append(cnt)
+                                break
+                rows.append(cnts)
+            self.rowContours = rows
+
+    def __cutByRow(self):
+        rowLevels = None
+        if len(self.contours) == 0:
+            self.rowContours = None
+            self.cutImages = [[self.image]]
+        else:
+            for cnt in self.contours:
                 peri = cv2.arcLength(cnt, True)  # True means closed
                 approx = cv2.approxPolyDP(cnt, 0.02 * peri, True)
-                x, y, w, h = cv2.boundingRect(approx)
-                l = x**2 + y**2
-                if lengths is None:
-                    lengths = [l]
-                    cnts = [cnt]
+                _, y, _, h = cv2.boundingRect(approx)
+                if rowLevels is None:
+                    rowLevels = [y + h]
+                    self.rowContours = [[cnt]]
                 else:
-                    for j, length in enumerate(lengths):
-                        if l > length:
-                            if j == len(lengths) - 1:
-                                lengths.append(l)
-                                cnts.append(cnt)
-                                break;
-                            else:
-                                continue
-                        else:
-                            if j == 0:
-                                lengths.insert(0, l)
-                                cnts.insert(0, cnt)
-                            else:
-                                lengths.insert(j - 1, l)
-                                cnts.insert(j - 1, cnt)
+                    for i, level in enumerate(rowLevels):
+                        if level - self.rowApprox < y + h < level + self.rowApprox:
+                            self.rowContours[i].append(cnt)
                             break
-            self.contours = cnts
+                        elif y + h < level:
+                            rowLevels.insert(i, y + h)
+                            self.rowContours.insert(i, [cnt])
+                            break
+                        elif i == len(rowLevels) - 1:
+                            rowLevels.append(y + h)
+                            self.rowContours.append([cnt])
+                            break
+
+    def __getPerspective(self, x, y, w, h):
+        letterPts = np.float32([(x - self.boxApprox, y - self.boxApprox),
+                                (x + w + self.boxApprox, y - self.boxApprox),
+                                (x - self.boxApprox, y + h + self.boxApprox),
+                                (x + w + self.boxApprox, y + h + self.boxApprox)])
+        imgPts = np.float32(
+            [(0, 0), (self.cutSize[0], 0), (0, self.cutSize[1]), (self.cutSize[0], self.cutSize[1])])
+        matrix = cv2.getPerspectiveTransform(letterPts, imgPts)
+        return cv2.warpPerspective(self.image, matrix, (self.cutSize[0], self.cutSize[1]))
+
+    def __cutByCol(self):
+        previous = 0
+        if self.rowContours is None:
+            pass
+        else:
+            self.cutImages = []
+            for row in self.rowContours:
+                for i, cnt in enumerate(row):
+                    peri = cv2.arcLength(cnt, True)  # True means closed
+                    approx = cv2.approxPolyDP(cnt, 0.02 * peri, True)
+                    x, y, w, h = cv2.boundingRect(approx)
+                    perspective = self.__getPerspective(x, y, w, h)
+                    if i == 0:
+                        self.cutImages.append([perspective])
+                    elif x - previous < self.minGap:
+                        self.cutImages[-1].append(perspective)
+                    else:
+                        self.cutImages.append([perspective])
+                    previous = x + w
 
     def __drawContours(self):
         img1 = self.image.copy()
@@ -106,39 +162,26 @@ class preProcess:
             self.imgDrawWithoutBox = img1
             self.imgDrawWithBox = img2
 
-    def __cutByContour(self):
-        images = []
-        if self.contours is None:
-            self.cutImages = [self.image]
-        else:
-            for cnt in self.contours:
-                peri = cv2.arcLength(cnt, True)  # True means closed
-                approx = cv2.approxPolyDP(cnt, 0.02 * peri, True)
-                x, y, w, h = cv2.boundingRect(approx)
-                x -= 1
-                y -= 1
-                w += 2
-                h += 2
-                letterPts = np.float32([(x, y), (x + w, y), (x, y + h), (x + w, y + h)])
-                imgPts = np.float32([(0, 0), (self.cutSize[0], 0), (0, self.cutSize[1]), (self.cutSize[0], self.cutSize[1])])
-                matrix = cv2.getPerspectiveTransform(letterPts, imgPts)
-                images.append(cv2.warpPerspective(self.image, matrix, (self.cutSize[0], self.cutSize[1])))
-            self.cutImages = images
-
     def __empty(self, x):
         pass
 
     def __createTrackBar(self):
         cv2.namedWindow("Parameters")
-        cv2.resizeWindow("Parameters", 500, 150)
+        cv2.resizeWindow("Parameters", 500, 250)
         cv2.createTrackbar("TH 1", "Parameters", 128, 255, self.__empty)
         cv2.createTrackbar("TH 2", "Parameters", 128, 255, self.__empty)
-        cv2.createTrackbar("AREA MIN", "Parameters", 0, 1000, self.__empty)
+        cv2.createTrackbar("MIN AREA", "Parameters", 0, 10000, self.__empty)
+        cv2.createTrackbar("ROW APPROX", "Parameters", 5, 20, self.__empty)
+        cv2.createTrackbar("MIN GAP", "Parameters", 10, 100, self.__empty)
+        cv2.createTrackbar("BOX APPROX", "Parameters", 5, 20, self.__empty)
 
     def updateStatus(self):
         self.th1 = cv2.getTrackbarPos("TH 1", "Parameters")
         self.th2 = cv2.getTrackbarPos("TH 2", "Parameters")
-        self.areaMin = cv2.getTrackbarPos("AREA MIN", "Parameters")
+        self.areaMin = cv2.getTrackbarPos("MIN AREA", "Parameters")
+        self.rowApprox = cv2.getTrackbarPos("ROW APPROX", "Parameters")
+        self.minGap = cv2.getTrackbarPos("MIN GAP", "Parameters")
+        self.boxApprox = cv2.getTrackbarPos("BOX APPROX", "Parameters")
         self.__process()
 
     def updateImage(self, img):
