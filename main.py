@@ -3,7 +3,7 @@ import mosaic as msc
 from preProcess import preProcess
 
 ########################################################################
-imgPath = 'data/siema.png'
+imgPath = 'data/sample04.png'
 
 ########################################################################
 
@@ -18,9 +18,8 @@ def projection():
     pp = preProcess(img)
     while True:
         mosaic = msc.imgStacking([[pp.getImage(), pp.getGrayedImage(), pp.getCanniedImage(), pp.getContouredImage(),
-                                   pp.getContouredImageWithBox()],
-                                  pp.getCutImages()],
-                                 (250,350))
+                                   pp.getContouredImageWithBox()]] + pp.getCutImages(),
+                                 (1500, 700))
         showImg(mosaic)
         pp.updateStatus()
         if cv2.waitKey(1) & 0xFF == ord('q'):
