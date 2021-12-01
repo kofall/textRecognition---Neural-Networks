@@ -1,6 +1,7 @@
 import cv2
 import mosaic as msc
 from preProcess import preProcess
+from predict import predict
 
 ########################################################################
 imgPath = 'data/sample04.png'
@@ -20,7 +21,8 @@ def projection():
         mosaic = msc.imgStacking([[pp.getImage(), pp.getGrayedImage(), pp.getCanniedImage(), pp.getContouredImage(),
                                    pp.getContouredImageWithBox()]] + pp.getCutImages(),
                                  (1500, 700))
-        showImg(mosaic)
+        showImg(pp.getCutImages()[0][0])
+        print(predict(cv2.resize(pp.getCutImages()[0][0], (128, 128))))
         pp.updateStatus()
         if cv2.waitKey(1) & 0xFF == ord('q'):
             break

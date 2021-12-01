@@ -114,7 +114,7 @@ class preProcess:
         imgPts = np.float32(
             [(0, 0), (self.cutSize[0], 0), (0, self.cutSize[1]), (self.cutSize[0], self.cutSize[1])])
         matrix = cv2.getPerspectiveTransform(letterPts, imgPts)
-        return cv2.warpPerspective(self.image, matrix, (self.cutSize[0], self.cutSize[1]))
+        return cv2.warpPerspective(255 - self.imgGrayed, matrix, (self.cutSize[0], self.cutSize[1]))
 
     def __cutByCol(self):
         previous = 0
