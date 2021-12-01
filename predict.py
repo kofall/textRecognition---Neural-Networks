@@ -98,5 +98,7 @@ def predict(array):
     model.eval()
     with torch.no_grad():
         pred = model(transform(array))
-        predicted_letter = classes[pred.argmax(0)]
+        class_index =int(pred.argmax(1))
+        predicted_letter = classes[class_index]
+
         return predicted_letter
