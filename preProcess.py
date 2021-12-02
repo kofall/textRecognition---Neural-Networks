@@ -152,7 +152,7 @@ class preProcess:
             [(0, 0), (w, 0), (0, h), (w, h)])
         matrix = cv2.getPerspectiveTransform(letterPts, imgPts)
         img = np.array(cv2.warpPerspective(255 - self.imgGrayed, matrix, (w, h)))
-        return (img if self.source != 3 else self.__yenThrsh(img))
+        return self.__yenThrsh(img)
 
     def __cutByCol(self):
         previous = 0
@@ -225,7 +225,7 @@ class preProcess:
         cv2.createTrackbar("TH 1", "Parameters", 128, 255, self.__empty)
         cv2.createTrackbar("TH 2", "Parameters", 128, 255, self.__empty)
         cv2.createTrackbar("MIN AREA", "Parameters", 50, 1000, self.__empty)
-        cv2.createTrackbar("ROW APPROX", "Parameters", 5, 100, self.__empty)
+        cv2.createTrackbar("ROW APPROX", "Parameters", 5, 150, self.__empty)
         cv2.createTrackbar("MIN GAP", "Parameters", 10, 200, self.__empty)
         cv2.createTrackbar("BACK APPROX", "Parameters", 10, 200, self.__empty)
         cv2.createTrackbar("BOX APPROX", "Parameters", 0, 100, self.__empty)

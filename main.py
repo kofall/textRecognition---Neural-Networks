@@ -7,9 +7,9 @@ import time
 import numpy as np
 
 ########################################################################
-#imgPath = 'data/img09.png'
-imgPath = 'data/tekst06.png'
-windowSize = (1600, 800)
+imgPath = 'data/img05.png'
+#imgPath = 'data/tekst08.png'
+windowSize = (1500, 750)
 ########################################################################
 words = None
 finish = False
