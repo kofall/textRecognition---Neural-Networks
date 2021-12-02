@@ -19,10 +19,10 @@ class preProcess:
         self.imgDrawWithBox = None
         self.cutImages = None
 
-        self.source = 0
+        self.source = 1
         self.th1 = 128
         self.th2 = 128
-        self.areaMin = 0
+        self.areaMin = 50
         self.rowApprox = 5
         self.minGap = 10
         self.backgroundApprox = 10
@@ -45,8 +45,11 @@ class preProcess:
         self.__drawContours()
 
     def __checkSource(self):
-        if self.source == 0:
+        if self.source == 1:
             self.image = self.originalImage
+        elif self.source == 2:
+            self.image = self.originalImage
+            self.image = cv2.resize(self.image, (int(self.image.shape[0]/2), int(self.image.shape[1]/2)))
         else:
             _, self.image = self.cap.read()
             self.image = cv2.resize(self.image, (800, 600))
@@ -55,10 +58,15 @@ class preProcess:
         self.imgBlured = cv2.GaussianBlur(self.image, (7, 7), 0)
 
     def __toGray(self):
-        self.imgGrayed = 255 - cv2.cvtColor((self.image if self.source == 0 else self.imgBlured), cv2.COLOR_BGR2GRAY)
+        self.imgGrayed = 255 - cv2.cvtColor((self.image if self.source != 3 else self.imgBlured), cv2.COLOR_BGR2GRAY)
+        self.imgGrayed = (self.__thrsh(self.imgGrayed) if self.source == 2 else self.imgGrayed)
 
-    def __otsuThrsh(self, img):
-        thresh = filters.threshold_otsu(img)
+    def __thrsh(self, img):
+        _, th = cv2.threshold(img, self.th1, self.th2, cv2.THRESH_BINARY)
+        return th
+
+    def __yenThrsh(self, img):
+        thresh = filters.threshold_yen(img)
         img[img > thresh] = 255
         img[img <= thresh] = 0
         return img
@@ -70,7 +78,7 @@ class preProcess:
         self.imgDilated = cv2.dilate(self.imgCannied, kernel, iterations=iters)
 
     def __findContours(self):
-        self.contours, _ = cv2.findContours((self.imgGrayed if self.source == 0 else self.imgDilated), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
+        self.contours, _ = cv2.findContours((self.imgGrayed if self.source != 3 else self.imgDilated), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
 
     def __selectByArea(self):
         cnts = []
@@ -144,7 +152,7 @@ class preProcess:
             [(0, 0), (w, 0), (0, h), (w, h)])
         matrix = cv2.getPerspectiveTransform(letterPts, imgPts)
         img = np.array(cv2.warpPerspective(255 - self.imgGrayed, matrix, (w, h)))
-        return (img if self.source == 0 else self.__otsuThrsh(img))
+        return (img if self.source != 3 else self.__yenThrsh(img))
 
     def __cutByCol(self):
         previous = 0
@@ -213,17 +221,17 @@ class preProcess:
     def __createTrackBar(self):
         cv2.namedWindow("Parameters")
         cv2.resizeWindow("Parameters", 700, 300)
-        cv2.createTrackbar("SOURCE", "Parameters", 0, 1, self.__empty)
+        cv2.createTrackbar("SOURCE", "Parameters", 0, 2, self.__empty)
         cv2.createTrackbar("TH 1", "Parameters", 128, 255, self.__empty)
         cv2.createTrackbar("TH 2", "Parameters", 128, 255, self.__empty)
-        cv2.createTrackbar("MIN AREA", "Parameters", 0, 10000, self.__empty)
+        cv2.createTrackbar("MIN AREA", "Parameters", 50, 1000, self.__empty)
         cv2.createTrackbar("ROW APPROX", "Parameters", 5, 100, self.__empty)
         cv2.createTrackbar("MIN GAP", "Parameters", 10, 200, self.__empty)
         cv2.createTrackbar("BACK APPROX", "Parameters", 10, 200, self.__empty)
         cv2.createTrackbar("BOX APPROX", "Parameters", 0, 100, self.__empty)
 
     def updateStatus(self):
-        self.source = cv2.getTrackbarPos("SOURCE", "Parameters")
+        self.source = cv2.getTrackbarPos("SOURCE", "Parameters") + 1
         self.th1 = cv2.getTrackbarPos("TH 1", "Parameters")
         self.th2 = cv2.getTrackbarPos("TH 2", "Parameters")
         self.areaMin = cv2.getTrackbarPos("MIN AREA", "Parameters")
