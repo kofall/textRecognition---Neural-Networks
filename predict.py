@@ -3,7 +3,7 @@ import torch
 import torch.nn as nn
 import numpy as np
 
-MODEL_PATH = "./models/model.pth"
+MODEL_PATH = "./models/model1.pth"
 
 classes = [
     "0",

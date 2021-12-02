@@ -1,32 +1,42 @@
 import cv2
 import numpy as np
+from skimage import filters
 
 
 class preProcess:
     def __init__(self, img):
-        self.image = img
+        self.originalImage = img
+        self.cap = cv2.VideoCapture(0)
+        self.image = None
         self.contours = None
+        self.rowContours = None
+
+        self.imgBlured = None
         self.imgGrayed = None
         self.imgCannied = None
+        self.imgDilated = None
         self.imgDrawWithoutBox = None
         self.imgDrawWithBox = None
-        self.rowContours = None
         self.cutImages = None
 
+        self.source = 0
         self.th1 = 128
         self.th2 = 128
         self.areaMin = 0
         self.rowApprox = 5
         self.minGap = 10
-        self.cutSize = (250, 350)  # (width, height)
-        self.boxApprox = 5
+        self.backgroundApprox = 10
+        self.boxApprox = 0
 
         self.__createTrackBar()
         self.__process()
 
     def __process(self):
+        self.__checkSource()
+        self.__toBlur()
         self.__toGray()
         self.__imgEdgeDetectCanny()
+        self.__imgDilation()
         self.__findContours()
         self.__selectByArea()
         self.__cutByRow()
@@ -34,14 +44,33 @@ class preProcess:
         self.__cutByCol()
         self.__drawContours()
 
+    def __checkSource(self):
+        if self.source == 0:
+            self.image = self.originalImage
+        else:
+            _, self.image = self.cap.read()
+            self.image = cv2.resize(self.image, (800, 600))
+
+    def __toBlur(self):
+        self.imgBlured = cv2.GaussianBlur(self.image, (7, 7), 0)
+
     def __toGray(self):
-        self.imgGrayed = 255 - cv2.cvtColor(self.image, cv2.COLOR_BGR2GRAY)
+        self.imgGrayed = 255 - cv2.cvtColor((self.image if self.source == 0 else self.imgBlured), cv2.COLOR_BGR2GRAY)
+
+    def __otsuThrsh(self, img):
+        thresh = filters.threshold_otsu(img)
+        img[img > thresh] = 255
+        img[img <= thresh] = 0
+        return img
 
     def __imgEdgeDetectCanny(self):
-        self.imgCannied = cv2.Canny(self.image, self.th1, self.th2)
+        self.imgCannied = cv2.Canny(self.imgGrayed, self.th1, self.th2)
+
+    def __imgDilation(self, kernel=np.ones((5, 5), np.uint8), iters=1):
+        self.imgDilated = cv2.dilate(self.imgCannied, kernel, iterations=iters)
 
     def __findContours(self):
-        self.contours, _ = cv2.findContours(self.imgGrayed, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
+        self.contours, _ = cv2.findContours((self.imgGrayed if self.source == 0 else self.imgDilated), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
 
     def __selectByArea(self):
         cnts = []
@@ -83,7 +112,7 @@ class preProcess:
         rowLevels = None
         if len(self.contours) == 0:
             self.rowContours = None
-            self.cutImages = [[self.image]]
+            self.cutImages = None
         else:
             for cnt in self.contours:
                 peri = cv2.arcLength(cnt, True)  # True means closed
@@ -112,9 +141,10 @@ class preProcess:
                                 (x - self.boxApprox, y + h + self.boxApprox),
                                 (x + w + self.boxApprox, y + h + self.boxApprox)])
         imgPts = np.float32(
-            [(0, 0), (self.cutSize[0], 0), (0, self.cutSize[1]), (self.cutSize[0], self.cutSize[1])])
+            [(0, 0), (w, 0), (0, h), (w, h)])
         matrix = cv2.getPerspectiveTransform(letterPts, imgPts)
-        return np.array(cv2.warpPerspective(self.image, matrix, (self.cutSize[0], self.cutSize[1])))
+        img = np.array(cv2.warpPerspective(255 - self.imgGrayed, matrix, (w, h)))
+        return (img if self.source == 0 else self.__otsuThrsh(img))
 
     def __cutByCol(self):
         previous = 0
@@ -127,7 +157,7 @@ class preProcess:
                     peri = cv2.arcLength(cnt, True)  # True means closed
                     approx = cv2.approxPolyDP(cnt, 0.02 * peri, True)
                     x, y, w, h = cv2.boundingRect(approx)
-                    perspective = self.__getPerspective(x, y, w, h)
+                    perspective = self.__fillToSquare(self.__getPerspective(x, y, w, h))
                     if i == 0:
                         self.cutImages.append([perspective])
                     elif x - previous < self.minGap:
@@ -135,14 +165,23 @@ class preProcess:
                     else:
                         self.cutImages.append([perspective])
                     previous = x + w
+                self.cutImages.append([None])
+
+    def __fillToSquare(self, img):
+        filled = 255 - cv2.cvtColor(self.imgWhite(max(img.shape) + 2 * self.backgroundApprox), cv2.COLOR_BGR2GRAY)
+        y_offset_up = self.backgroundApprox + int(max(img.shape)/2 - img.shape[0]/2)
+        y_offset_down = self.backgroundApprox + int(max(img.shape)/2 + img.shape[0]/2)
+        x_offset_left = self.backgroundApprox + int(max(img.shape)/2 - img.shape[1]/2)
+        x_offset_right = self.backgroundApprox + int(max(img.shape)/2 + img.shape[1]/2)
+        filled[y_offset_up : y_offset_down, x_offset_left : x_offset_right] = img
+        return filled
+
 
     def __drawContours(self):
         img1 = self.image.copy()
         img2 = self.image.copy()
-
         if self.contours is None:
-            self.imgDrawWithoutBox = self.image
-            self.imgDrawWithBox = self.image
+            pass
         else:
             for cnt in self.contours:
                 # without box
@@ -159,28 +198,38 @@ class preProcess:
                 #         (0, 255, 0), 1)
                 # cv2.putText(img2, "Area: {}".format(str(int(area))), (x, y - 10), cv2.FONT_HERSHEY_COMPLEX, 0.7,
                 #         (0, 255, 0), 1)
-            self.imgDrawWithoutBox = img1
-            self.imgDrawWithBox = img2
+        self.imgDrawWithoutBox = img1
+        self.imgDrawWithBox = img2
+
+    def imgBlack(self, x=100):
+        return np.zeros((x, x, 3), np.uint8)
+
+    def imgWhite(self, x=100):
+        return np.ones((x, x, 3), np.uint8)
 
     def __empty(self, x):
         pass
 
     def __createTrackBar(self):
         cv2.namedWindow("Parameters")
-        cv2.resizeWindow("Parameters", 500, 250)
+        cv2.resizeWindow("Parameters", 700, 300)
+        cv2.createTrackbar("SOURCE", "Parameters", 0, 1, self.__empty)
         cv2.createTrackbar("TH 1", "Parameters", 128, 255, self.__empty)
         cv2.createTrackbar("TH 2", "Parameters", 128, 255, self.__empty)
         cv2.createTrackbar("MIN AREA", "Parameters", 0, 10000, self.__empty)
-        cv2.createTrackbar("ROW APPROX", "Parameters", 5, 20, self.__empty)
-        cv2.createTrackbar("MIN GAP", "Parameters", 10, 100, self.__empty)
-        cv2.createTrackbar("BOX APPROX", "Parameters", 5, 20, self.__empty)
+        cv2.createTrackbar("ROW APPROX", "Parameters", 5, 100, self.__empty)
+        cv2.createTrackbar("MIN GAP", "Parameters", 10, 200, self.__empty)
+        cv2.createTrackbar("BACK APPROX", "Parameters", 10, 200, self.__empty)
+        cv2.createTrackbar("BOX APPROX", "Parameters", 0, 100, self.__empty)
 
     def updateStatus(self):
+        self.source = cv2.getTrackbarPos("SOURCE", "Parameters")
         self.th1 = cv2.getTrackbarPos("TH 1", "Parameters")
         self.th2 = cv2.getTrackbarPos("TH 2", "Parameters")
         self.areaMin = cv2.getTrackbarPos("MIN AREA", "Parameters")
         self.rowApprox = cv2.getTrackbarPos("ROW APPROX", "Parameters")
         self.minGap = cv2.getTrackbarPos("MIN GAP", "Parameters")
+        self.backgroundApprox = cv2.getTrackbarPos("BACK APPROX", "Parameters")
         self.boxApprox = cv2.getTrackbarPos("BOX APPROX", "Parameters")
         self.__process()
 

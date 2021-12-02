@@ -106,8 +106,8 @@ if __name__ == "__main__":
     batch_size = 64
 
     print("Creating loader...")
-    train_dataloader = DataLoader(train_data, batch_size=batch_size, shuffle=True,num_workers=3)
-    test_dataloader = DataLoader(test_data, batch_size=batch_size, shuffle=True, num_workers=3)
+    train_dataloader = DataLoader(train_data, batch_size=batch_size, shuffle=True,num_workers=1)
+    test_dataloader = DataLoader(test_data, batch_size=batch_size, shuffle=True, num_workers=1)
     print("Initiating model...")
     device = "cuda" if torch.cuda.is_available() else "cpu"
     print(f"Using {device} device")
